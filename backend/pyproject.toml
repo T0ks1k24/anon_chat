@@ -1,0 +1,18 @@
+[project]
+name = "annon-chat"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "channels>=4.3.2",
+    "channels-redis>=4.3.0",
+    "daphne>=4.2.1",
+    "django>=6.0.3",
+    "django-cors-headers>=4.9.0",
+    "django-filter>=25.2",
+    "djangorestframework>=3.17.0",
+    "djangorestframework-simplejwt>=5.5.1",
+    "psycopg2-binary>=2.9.11",
+    "redis>=7.4.0",
+]
