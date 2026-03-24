@@ -47,6 +47,8 @@ export default function Chat() {
             else next.delete(data.user);
             return next;
           });
+        } else if (data.type === "sync_presence") {
+          setOnlineUsers(new Set(data.users));
         }
       });
 

@@ -24,6 +24,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.set_online_status(True)
         await self.accept()
 
+        # Sync existing online users to the newly connected client
+        online_users = await self.get_online_users()
+        await self.send(text_data=json.dumps({
+            "type": "sync_presence",
+            "users": online_users
+        }))
+
         await self.channel_layer.group_send(
             self.room,
             {
@@ -88,6 +95,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "user": event["user"],
             "status": event["status"]
         }))
+
+    @database_sync_to_async
+    def get_online_users(self):
+        # Fetch directly to avoid DB sync issues, ensuring latest state
+        return list(User.objects.filter(is_online=True).values_list('username', flat=True))
 
     @database_sync_to_async
     def set_online_status(self, is_online):
