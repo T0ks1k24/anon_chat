@@ -1,10 +1,18 @@
 import json
+import os
+import redis.asyncio as aioredis
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from chat.models import Message
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
+
+# Dedicated Redis connection for ultra-fast presence tracking TTLs
+redis_client = aioredis.from_url(
+    f"redis://{os.environ.get('REDIS_HOST', '127.0.0.1')}:6379/1",
+    decode_responses=True
+)
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -21,11 +29,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
-        await self.set_online_status(True)
+        # Mark user as online in Redis with a 60 sec TTL
+        await redis_client.set(f"online_user:{self.user.username}", "1", ex=60)
         await self.accept()
 
-        # Sync existing online users to the newly connected client
-        online_users = await self.get_online_users()
+        # Sync existing online users based on active Redis keys
+        keys = await redis_client.keys("online_user:*")
+        online_users = [k.replace("online_user:", "") for k in keys]
+        
         await self.send(text_data=json.dumps({
             "type": "sync_presence",
             "users": online_users
@@ -42,7 +53,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         if hasattr(self, 'user') and self.user.is_authenticated:
-            await self.set_online_status(False)
+            # Graceful disconnect immediately cleans up the Redis key
+            await redis_client.delete(f"online_user:{self.user.username}")
+            
             await self.channel_layer.group_send(
                 self.room,
                 {
@@ -60,8 +73,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         data = json.loads(text_data)
         
-        # Ping/pong heartbeat
+        # Ping/pong heartbeat helps us refresh the 60 sec TTL for presence
         if data.get("type") == "ping":
+            await redis_client.expire(f"online_user:{self.user.username}", 60)
             await self.send(text_data=json.dumps({"type": "pong"}))
             return
 
@@ -95,16 +109,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "user": event["user"],
             "status": event["status"]
         }))
-
-    @database_sync_to_async
-    def get_online_users(self):
-        # Fetch directly to avoid DB sync issues, ensuring latest state
-        return list(User.objects.filter(is_online=True).values_list('username', flat=True))
-
-    @database_sync_to_async
-    def set_online_status(self, is_online):
-        self.user.is_online = is_online
-        self.user.save(update_fields=['is_online'])
 
     @database_sync_to_async
     def save_message(self, content):
