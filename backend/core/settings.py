@@ -32,14 +32,11 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
 ]
 
-# ❗ БЕЗ:
-# - sessions
-# - csrf
-# - messages
+
 ROOT_URLCONF = 'core.urls'
 
 
-# TEMPLATES (не потрібні)
+# TEMPLATES
 TEMPLATES = []
 
 
