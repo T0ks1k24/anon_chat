@@ -17,25 +17,25 @@ redis_client = aioredis.from_url(
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope.get('user')
+        self.room_name = self.scope['url_route']['kwargs']['room_name']
+        self.room_group_name = f'chat_{self.room_name}'
 
         if not self.user or not self.user.is_authenticated:
             await self.close()
             return
 
-        self.room = 'global_chat'
-
         await self.channel_layer.group_add(
-            self.room,
+            self.room_group_name,
             self.channel_name
         )
 
-        # Mark user as online in Redis with a 60 sec TTL
-        await redis_client.set(f"online_user:{self.user.username}", "1", ex=60)
+        # Mark user as online in this specific room in Redis with a 60 sec TTL
+        await redis_client.set(f"online_user:{self.room_name}:{self.user.username}", "1", ex=60)
         await self.accept()
 
-        # Sync existing online users based on active Redis keys
-        keys = await redis_client.keys("online_user:*")
-        online_users = [k.replace("online_user:", "") for k in keys]
+        # Sync existing online users based on active Redis keys for this room
+        keys = await redis_client.keys(f"online_user:{self.room_name}:*")
+        online_users = [k.split(":")[-1] for k in keys]
         
         await self.send(text_data=json.dumps({
             "type": "sync_presence",
@@ -43,7 +43,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
         await self.channel_layer.group_send(
-            self.room,
+            self.room_group_name,
             {
                 "type": "presence",
                 "user": self.user.username,
@@ -54,10 +54,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'user') and self.user.is_authenticated:
             # Graceful disconnect immediately cleans up the Redis key
-            await redis_client.delete(f"online_user:{self.user.username}")
+            await redis_client.delete(f"online_user:{self.room_name}:{self.user.username}")
             
             await self.channel_layer.group_send(
-                self.room,
+                self.room_group_name,
                 {
                     "type": "presence",
                     "user": self.user.username,
@@ -66,7 +66,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
 
             await self.channel_layer.group_discard(
-                self.room,
+                self.room_group_name,
                 self.channel_name
             )
 
@@ -75,7 +75,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         
         # Ping/pong heartbeat helps us refresh the 60 sec TTL for presence
         if data.get("type") == "ping":
-            await redis_client.expire(f"online_user:{self.user.username}", 60)
+            await redis_client.expire(f"online_user:{self.room_name}:{self.user.username}", 60)
             await self.send(text_data=json.dumps({"type": "pong"}))
             return
 
@@ -86,7 +86,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         msg = await self.save_message(message_content)
 
         await self.channel_layer.group_send(
-            self.room,
+            self.room_group_name,
             {
                 "type": "chat_message",
                 "message": msg.content,
@@ -112,4 +112,4 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def save_message(self, content):
-        return Message.objects.create(sender=self.user, content=content)
+        return Message.objects.create(sender=self.user, room=self.room_name, content=content)

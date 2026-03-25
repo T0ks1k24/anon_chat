@@ -5,6 +5,7 @@ export class WebSocketService {
   private url: string;
   private messageHandlers: MessageHandler[] = [];
   private token: string | null = null;
+  private room: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private autoReconnect: boolean = true;
 
@@ -12,15 +13,25 @@ export class WebSocketService {
     this.url = url;
   }
 
-  connect(token: string) {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) return;
-    this.token = token;
+  connect(token: string, room: string = "general") {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN && this.room === room) return;
     
-    const wsUrl = `${this.url}?token=${token}`;
+    if (this.socket) {
+      this.disconnect();
+    }
+
+    this.token = token;
+    this.room = room;
+    this.autoReconnect = true;
+    
+    const baseUrl = this.url.endsWith('/') ? this.url : `${this.url}/`;
+    const wsUrl = `${baseUrl}${room}/?token=${token}`;
+    
+    console.log(`Connecting to WS: ${wsUrl}`);
     this.socket = new WebSocket(wsUrl);
 
     this.socket.onopen = () => {
-      console.log("WebSocket connected");
+      console.log(`WebSocket connected to room: ${room}`);
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     };
 
@@ -37,9 +48,9 @@ export class WebSocketService {
     this.socket.onclose = () => {
       console.log("WebSocket disconnected");
       this.socket = null;
-      if (this.autoReconnect && this.token) {
+      if (this.autoReconnect && this.token && this.room) {
         this.reconnectTimer = setTimeout(() => {
-          this.connect(this.token!);
+          this.connect(this.token!, this.room!);
         }, 3000);
       }
     };
@@ -54,6 +65,10 @@ export class WebSocketService {
     if (this.socket) {
       this.socket.close();
       this.socket = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
   }
 
@@ -74,6 +89,7 @@ export class WebSocketService {
 
   sendPing() {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: "ping" }));
     }
   }
 }

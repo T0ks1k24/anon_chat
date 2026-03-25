@@ -7,8 +7,6 @@ class Message(models.Model):
     sender = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="sent_messages"
     )
-    receiver = models.ForeignKey(
-        User, on_delete=models.CASCADE, null=True, blank=True, related_name="received_messages"
-    )
+    room = models.CharField(max_length=100, default="global")
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

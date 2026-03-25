@@ -3,8 +3,6 @@ from django.db import models
 
 class User(AbstractUser):
     email = None
-    last_seen = models.DateTimeField(auto_now=True)
-    is_online = models.BooleanField(default=False)
 
     groups = models.ManyToManyField(
         Group,
