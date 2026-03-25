@@ -27,6 +27,9 @@ export default function Chat() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let isCancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
     const init = async () => {
       const token = getToken();
       if (!token || !username) {
@@ -40,11 +43,13 @@ export default function Chat() {
 
       // Room-specific E2EE key
       const key = await deriveKey(`secret-anon-chat-${activeRoom}`);
+      if (isCancelled) return;
+
       setCryptoKey(key);
 
       chatService.connect(token, activeRoom);
       
-      const unsubscribe = chatService.onMessage(async (data) => {
+      unsubscribe = chatService.onMessage(async (data) => {
         if (data.type === "chat_message") {
           try {
             const dec = await decryptMessage(data.message, key);
@@ -66,12 +71,15 @@ export default function Chat() {
       });
 
       setIsInitializing(false);
-
-      return () => {
-        unsubscribe();
-      };
     };
     init();
+
+    return () => {
+      isCancelled = true;
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [router, username, activeRoom]);
 
   useEffect(() => {
